@@ -1,0 +1,86 @@
+# Freeze damage assessment - Lake County (Clermont), Florida, Jan-Feb 2026.
+# Every setting lives here; the code has no hard-coded values.
+
+run:
+  resolution_m: 10            # full run
+  test_resolution_m: 60       # python run.py --test
+  crs: "EPSG:32617"           # UTM 17N (native CRS of tile 17RMM)
+  cache_dir: "data/cache"     # downloaded bands, one GeoTIFF per band and date
+  output_dir: "outputs"       # rasters, vectors, tables
+  figures_dir: "figures"      # PNGs of the full run (test-run figures go to outputs/60m/figures)
+
+aoi:
+  bbox: [-81.95, 28.40, -81.60, 28.85]   # lon/lat: west, south, east, north
+
+sentinel2:
+  stac_url: "https://earth-search.aws.element84.com/v1"
+  collection: "sentinel-2-l2a"
+  mgrs_tile: "MGRS-17RMM"
+  start_date: "2026-01-04"
+  end_date: "2026-02-23"
+  # Band names used by Earth Search: blue=B02, green=B03, red=B04, rededge1=B05,
+  # nir=B08, nir08=B8A, swir16=B11, scl=scene classification
+  base_bands: ["red", "nir", "scl"]      # needed on every date (cloud mask + NDVI)
+  scale: 10000                # reflectance = (DN + offset) / scale
+  boa_offset: -1000           # applied only where the data contain the offset (see data.py)
+  offset_check_max_below: 0.01
+  clear_scl_classes: [4, 5]   # 4 = vegetation, 5 = bare soil; everything else is masked
+  resampling: "average"       # reflectance bands ("nearest" is always used for scl)
+  chunk_size: 2048
+  retries: 5                  # download tries per date (unstable connections)
+  retry_wait_s: 30            # doubles after each failed try
+  gdal_http_retries: 5
+  gdal_http_retry_delay_s: 10
+
+dates:
+  baseline: ["2026-01-04", "2026-01-07", "2026-01-17", "2026-01-22", "2026-01-27"]
+  damage_early: "2026-02-06"
+  damage_late: "2026-02-21"
+  noise_pair: ["2026-01-17", "2026-01-27"]   # two pre-freeze dates: normal date-to-date change
+  freeze_period: ["2026-01-26", "2026-02-02"] # shaded in the time-series figure
+
+timeseries:
+  min_clear_pct: 20           # dates with less clear land are skipped (unless baseline/damage dates)
+  min_group_clear_pct: 5      # plot a point only if this % of the group's pixels is clear
+
+indices: ["NDVI", "EVI", "NDRE", "NDWI", "MCARI"]   # NDVI drives the damage classes
+
+thresholds:
+  vegetation_ndvi: 0.3        # baseline NDVI >= this = vegetated
+  mild: -0.10                 # NDVI change classes: none >= mild > mild >= moderate ...
+  moderate: -0.20
+  severe: -0.30
+
+kill_zones:
+  late_min_class: 2           # moderate or worse on 21 Feb ...
+  early_min_class: 1          # ... and already mild or worse on 6 Feb
+  min_area_ha: 0.1
+  connectivity: 8
+
+citrus:
+  cdl_year: 2025
+  cdl_class: 72               # USDA Cropland Data Layer class "Citrus"
+  cdl_crs: "EPSG:5070"
+  api_url: "https://nassgeodata.gmu.edu/axis2/services/CDLService/GetCDLFile"
+  timeout_s: 120
+  retries: 5
+  retry_wait_s: 10
+
+plots:
+  max_pixels: 1200            # maps are downsampled so the longer side is at most this
+  dpi: 130
+  map_percentiles: [2, 98]    # colour range of index maps (from baseline, vegetated pixels)
+  change_percentile: 98       # symmetric colour range of change maps
+  zoom_km: 3                  # close-up around the largest kill zone
+  colors:
+    surface: "#fcfcfb"
+    land: "#e3e2de"           # non-citrus land on damage maps
+    text: "#0b0b0b"
+    muted: "#52514e"
+    citrus: "#eb6834"
+    other_veg: "#2a78d6"
+    freeze: "#d9d8d3"
+    citrus_ok: "#9fbf8f"
+    damage: ["#ef8a62", "#cc4c3b", "#8b1a1a"]   # mild, moderate, severe
+    kill_zone: "#1c5cab"
+  index_cmaps: {NDVI: "YlGn", EVI: "YlGn", NDRE: "YlGn", NDWI: "GnBu", MCARI: "YlGn"}

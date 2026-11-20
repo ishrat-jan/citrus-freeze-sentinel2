@@ -1,0 +1,15 @@
+pystac-client
+odc-stac
+numpy
+pandas
+xarray
+rioxarray
+rasterio
+scipy
+dask
+geopandas
+shapely
+pyproj
+pyyaml
+requests
+matplotlib
