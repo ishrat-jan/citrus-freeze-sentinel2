@@ -43,7 +43,17 @@ The -0.10 threshold sits above normal date-to-date variation between two pre-fre
 
 ## Results (10 m)
 
-| | |
+### Where the citrus is
+
+![Where the citrus is: CDL citrus outlined in black on true colour, 6 Feb 2026](figures/citrus_location.png)
+
+*Citrus only: USDA CDL 2025 citrus outlined in black on the true-colour image of 6 Feb.
+Most citrus in the study area is one grove block in the south-west (right panel); the
+small scattered squares are single CDL pixels, many of them probably misclassified.*
+
+### Damage (citrus only)
+
+| Citrus only | |
 |---|---|
 | Citrus in the area (CDL 2025) | 313.5 ha |
 | Citrus assessed (vegetated, cloud-free baseline) | 217.0 ha |
@@ -58,9 +68,17 @@ freeze-injured leaves often stay green for days to weeks before they dry out
 and drop. All six kill zones lie within about 2 km of each other in one grove area
 (around 28.43 N, 81.86 W).
 
-![Citrus damage classes and kill zones](figures/damage_ndvi_killzones.png)
+![Citrus-only damage classes in the main citrus area](figures/damage_citrus_main_area.png)
 
-### How much each index changed for citrus
+*Citrus only: NDVI damage classes in the main citrus area on 6 and 21 Feb, kill zones
+outlined in blue. Grey = not citrus, or citrus that could not be assessed.*
+
+![Citrus-only damage classes, whole area, and close-up of the largest kill zone](figures/damage_ndvi_killzones.png)
+
+*Citrus only: the same damage classes for the whole study area, and a close-up of the
+largest kill zone.*
+
+### How much each index changed (citrus only)
 
 Median change of citrus pixels vs the baseline. "Change / noise" divides the
 21 Feb change by the normal date-to-date variation of that index (robust SD of
@@ -79,12 +97,24 @@ canopy lost greenness, chlorophyll and leaf water, which is what freeze injury
 looks like. NDVI gives the clearest signal relative to its noise. MCARI shows
 no clear response.
 
-![Time series of all indices](figures/timeseries_indices.png)
+![Time series of all indices, citrus vs other vegetation](figures/timeseries_indices.png)
 
-![NDVI change](figures/change_ndvi.png)
+*Citrus vs all other vegetation: median of each index on every clear date, main freeze shaded.*
 
-Other figures in [`figures/`](figures): a map of each index on the baseline,
-6 Feb and 21 Feb (`map_*.png`) and the change of each index (`change_*.png`).
+![NDVI change, all vegetation](figures/change_ndvi.png)
+
+*All vegetation (baseline NDVI >= 0.3), not only citrus: NDVI change vs the baseline.
+Other vegetation also lost greenness after the freeze.*
+
+All figures in [`figures/`](figures):
+
+| Figure | Shows |
+|---|---|
+| `citrus_location.png` | citrus only (CDL outlines on true colour) |
+| `damage_citrus_main_area.png`, `damage_ndvi_killzones.png` | citrus only (NDVI damage classes, kill zones) |
+| `timeseries_indices.png` | citrus vs all other vegetation |
+| `map_<index>.png` | all vegetation: each index on the baseline, 6 Feb and 21 Feb |
+| `change_<index>.png` | all vegetation: change of each index vs the baseline |
 
 ## How to run
 

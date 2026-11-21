@@ -96,13 +96,13 @@ def main(config="config.yaml", test=False):
                # robust SD (1.4826 x median absolute deviation): not inflated by the few extreme
                # pixels that ratio indices such as EVI and MCARI produce
                "noise_sd": round(1.4826 * float(np.median(np.abs(noise - np.median(noise)))), 4)}
-        maps, changes = {"Baseline (median, 4-27 Jan)": plots.thumb(base, cfg)}, {}
+        maps, changes = {"Baseline (median, 4-27 Jan)": plots.thumb(base.where(veg), cfg)}, {}
         for date in (early, late):
             val = index_on(date, name)
             ch = (val - base).where(veg)
             v = ch.values[groups["citrus"]]
             row[f"median_change_{date}"] = round(float(np.nanmedian(v)), 3)
-            maps[date] = plots.thumb(val, cfg)
+            maps[date] = plots.thumb(val.where(veg), cfg)
             changes[date] = plots.thumb(ch, cfg)
             if name == "NDVI":
                 ndvi_change[date] = ch
@@ -145,7 +145,14 @@ def main(config="config.yaml", test=False):
     plots.damage_map(damages, citrus, land, ids, kz, cfg, r["figures"])
     print(head.to_string(index=False))
 
-    step("7. GeoTIFFs")
+    step("7. Citrus location and citrus-only damage in the main citrus area")
+    win = plots.main_citrus_window(citrus, cfg)
+    rgb, _ = data.load_date(cfg, cfg["plots"]["rgb_date"], ["red", "green", "blue"], mask=False)
+    plots.citrus_location(rgb, citrus, win, cfg, r["figures"])
+    plots.damage_citrus_zoom(damages, citrus, land, kz, win, cfg, r["figures"])
+    del rgb
+
+    step("8. GeoTIFFs")
     save_tif(base_ndvi, r["out"] / "rasters" / "ndvi_baseline.tif")
     save_tif(base_count, r["out"] / "rasters" / "baseline_clear_dates.tif")
     for x in (early, late):

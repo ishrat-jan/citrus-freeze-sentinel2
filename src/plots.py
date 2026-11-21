@@ -15,6 +15,10 @@ import pandas as pd  # noqa: E402
 from matplotlib.colors import ListedColormap  # noqa: E402
 from matplotlib.patches import Patch  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
+import geopandas as gpd  # noqa: E402
+from rasterio.features import shapes  # noqa: E402
+from scipy import ndimage  # noqa: E402
+from shapely.geometry import shape  # noqa: E402
 
 from src.damage import NODATA  # noqa: E402
 
@@ -86,7 +90,7 @@ def timeseries(ts, cfg, folder):
     leg.legend(handles=handles, loc="center left", frameon=False, fontsize=9)
     for ax in axes[len(names) + 1:]:
         ax.axis("off")
-    fig.suptitle("Median index value per clear date (vegetated pixels)", x=0.01, ha="left",
+    fig.suptitle("Median index value per clear date - citrus vs all other vegetation", x=0.01, ha="left",
                  fontsize=12, color=c["text"])
     fig.tight_layout()
     return _save(fig, folder, "timeseries_indices", cfg)
@@ -102,7 +106,8 @@ def index_maps(name, panels, vmin, vmax, cfg, folder):
                        interpolation="nearest")
     cb = fig.colorbar(im, ax=axes, shrink=0.7)
     cb.set_label(name, fontsize=9)
-    fig.suptitle(f"{name}: baseline and after the freeze (cloud-masked)", x=0.01, ha="left", fontsize=12)
+    fig.suptitle(f"{name} - all vegetation (baseline NDVI >= 0.3), cloud-masked", x=0.01, ha="left",
+                 fontsize=12)
     return _save(fig, folder, f"map_{name.lower()}", cfg)
 
 
@@ -114,7 +119,8 @@ def change_maps(name, panels, lim, cfg, folder):
         im = ax.imshow(arr, extent=ext, cmap="RdBu", vmin=-lim, vmax=lim, interpolation="nearest")
     cb = fig.colorbar(im, ax=axes, shrink=0.7)
     cb.set_label(f"{name} change", fontsize=9)
-    fig.suptitle(f"{name} change vs baseline (vegetated pixels)", x=0.01, ha="left", fontsize=12)
+    fig.suptitle(f"{name} change vs baseline - all vegetation (red = decrease)", x=0.01, ha="left",
+                 fontsize=12)
     return _save(fig, folder, f"change_{name.lower()}", cfg)
 
 
@@ -172,5 +178,99 @@ def damage_map(damages, citrus, land, ids, kz, cfg, folder):
               [Patch(facecolor="none", edgecolor=c["kill_zone"], lw=1.5, label="kill zone"),
                Patch(color=c["land"], label="other land")]
     fig.legend(handles=handles, loc="lower center", ncol=6, frameon=False, fontsize=9)
+    fig.suptitle("NDVI damage classes - citrus only (whole area, and close-up of the largest kill zone)",
+                 x=0.01, ha="left", fontsize=12, color=c["text"])
     fig.subplots_adjust(bottom=0.12, wspace=0.15)
     return _save(fig, folder, "damage_ndvi_killzones", cfg)
+
+
+# ---------- where the citrus is, and citrus damage in the main citrus area ----------
+def main_citrus_window(citrus, cfg):
+    """Square window (zoom_citrus_km wide) centred where citrus is densest. Returns .sel() slices."""
+    res = cfg["run"]["res"]
+    size = max(1, int(cfg["plots"]["zoom_citrus_km"] * 1000 / res))
+    density = ndimage.uniform_filter(citrus.values.astype("float32"), size=size, mode="constant")
+    iy, ix = np.unravel_index(np.argmax(density), density.shape)
+    cx, cy, half = float(citrus.x[ix]), float(citrus.y[iy]), size * res / 2
+    return dict(x=slice(cx - half, cx + half), y=slice(cy + half, cy - half))
+
+
+def _outlines(mask, cfg):
+    """Outlines of a boolean raster (e.g. the citrus mask) as polygons in km."""
+    v = mask.values.astype("uint8")
+    geoms = [shape(g) for g, _ in shapes(v, mask=v > 0, transform=mask.odc.geobox.affine)]
+    g = gpd.GeoSeries(geoms, crs=cfg["run"]["crs"])
+    return g.scale(1e-3, 1e-3, origin=(0, 0))                    # m -> km
+
+
+def _rgb(bands, cfg):
+    """True-colour RGB array (contrast-stretched), NaN shown as white."""
+    rgb = np.dstack([bands[b] for b in ("red", "green", "blue")])
+    lo, hi = np.nanpercentile(rgb, cfg["plots"]["rgb_stretch"])
+    return np.nan_to_num(np.clip((rgb - lo) / (hi - lo), 0, 1), nan=1.0)
+
+
+def citrus_location(rgb_bands, citrus, win, cfg, folder):
+    """True-colour image with the CDL citrus mask outlined in black: whole area and main citrus area."""
+    c = cfg["plots"]["colors"]
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6.6), facecolor=c["surface"],
+                             gridspec_kw={"width_ratios": [1, 1.25]})
+    # whole area (downsampled)
+    small = {b: thumb(da, cfg)[0] for b, da in rgb_bands.items()}
+    ext = thumb(rgb_bands["red"], cfg)[1]
+    _style(axes[0], cfg, "Whole study area")
+    axes[0].imshow(_rgb(small, cfg), extent=ext, interpolation="nearest")
+    _outlines(citrus, cfg).boundary.plot(ax=axes[0], color=c["citrus_outline"], lw=0.4)
+    x0, x1, y0, y1 = (win["x"].start / 1e3, win["x"].stop / 1e3, win["y"].stop / 1e3, win["y"].start / 1e3)
+    axes[0].plot([x0, x1, x1, x0, x0], [y0, y0, y1, y1, y0], color=c["zoom_box"], lw=1.5)
+    axes[0].set_xlim(ext[0], ext[1])
+    axes[0].set_ylim(ext[2], ext[3])
+    # main citrus area (full resolution)
+    part = {b: da.sel(**win) for b, da in rgb_bands.items()}
+    ext2 = thumb(part["red"], cfg)[1]
+    _style(axes[1], cfg, "Main citrus area (box on the left)")
+    axes[1].imshow(_rgb({b: thumb(da, cfg)[0] for b, da in part.items()}, cfg), extent=ext2,
+                   interpolation="nearest")
+    _outlines(citrus.sel(**win), cfg).boundary.plot(ax=axes[1], color=c["citrus_outline"], lw=0.8)
+    axes[1].set_xlim(ext2[0], ext2[1])
+    axes[1].set_ylim(ext2[2], ext2[3])
+    for ax in axes:
+        ax.set_xlabel("Easting (km, UTM 17N)", fontsize=8, color=c["muted"])
+        ax.set_ylabel("Northing (km)", fontsize=8, color=c["muted"])
+    handles = [Patch(facecolor="none", edgecolor=c["citrus_outline"], lw=1.2, label="citrus (USDA CDL 2025)"),
+               Patch(facecolor="none", edgecolor=c["zoom_box"], lw=1.5, label="main citrus area")]
+    fig.legend(handles=handles, loc="lower center", ncol=2, frameon=False, fontsize=9)
+    fig.suptitle(f"Where the citrus is - true colour, {cfg['plots']['rgb_date']}", x=0.01, ha="left",
+                 fontsize=12, color=c["text"])
+    fig.subplots_adjust(bottom=0.1, wspace=0.18)
+    return _save(fig, folder, "citrus_location", cfg)
+
+
+def damage_citrus_zoom(damages, citrus, land, kz, win, cfg, folder):
+    """Citrus-only damage classes in the main citrus area, both dates, kill zones outlined."""
+    c = cfg["plots"]["colors"]
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6.4), sharey=True, facecolor=c["surface"])
+    for ax, (date, dmg) in zip(axes, damages.items()):
+        d = dmg.sel(**win)
+        codes, cmap = _damage_rgb(d.values, citrus.sel(**win).values, land.sel(**win).values, cfg)
+        arr, ext = thumb(d.copy(data=codes), cfg)
+        _style(ax, cfg, date)
+        ax.imshow(arr, extent=ext, cmap=cmap, vmin=-0.5, vmax=5.5, interpolation="nearest")
+        if len(kz):
+            g = kz.copy()
+            g["geometry"] = g.geometry.scale(1e-3, 1e-3, origin=(0, 0))
+            g.boundary.plot(ax=ax, color=c["kill_zone"], lw=0.8)
+        ax.set_xlim(ext[0], ext[1])
+        ax.set_ylim(ext[2], ext[3])
+        ax.set_xlabel("Easting (km, UTM 17N)", fontsize=8, color=c["muted"])
+        ax.set_ylabel("")
+    axes[0].set_ylabel("Northing (km)", fontsize=8, color=c["muted"])
+    handles = [Patch(color=c["citrus_ok"], label="citrus, no damage")] + \
+              [Patch(color=col, label=lab) for col, lab in zip(c["damage"], ["mild", "moderate", "severe"])] + \
+              [Patch(facecolor="none", edgecolor=c["kill_zone"], lw=1.5, label="kill zone"),
+               Patch(color=c["land"], label="not citrus / not assessed")]
+    fig.legend(handles=handles, loc="lower center", ncol=6, frameon=False, fontsize=9)
+    fig.suptitle("NDVI damage classes - citrus only, main citrus area", x=0.01, ha="left",
+                 fontsize=12, color=c["text"])
+    fig.subplots_adjust(bottom=0.12, wspace=0.08)
+    return _save(fig, folder, "damage_citrus_main_area", cfg)

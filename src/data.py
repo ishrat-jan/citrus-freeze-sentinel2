@@ -106,8 +106,9 @@ def boa_offset(red, scl, cfg):
     return s2["boa_offset"] if below < s2["offset_check_max_below"] else 0
 
 
-def load_date(cfg, date, bands):
-    """Reflectance (float32) of `bands` for one date, NaN where the pixel is not clear.
+def load_date(cfg, date, bands, mask=True):
+    """Reflectance (float32) of `bands` for one date, NaN where the pixel is not clear
+    (mask=False keeps every pixel, e.g. for a true-colour picture).
 
     Clear = SCL vegetation or bare soil, and valid red + nir.
     Also returns the share of pixels with data that are clear.
@@ -120,4 +121,4 @@ def load_date(cfg, date, bands):
             for b in dn if b != "scl"}
     clear = dn["scl"].isin(s2["clear_scl_classes"]) & ((refl["nir"] + refl["red"]) > 0)
     clear_pct = 100 * float(clear.sum()) / max(int((dn["scl"] > 0).sum()), 1)
-    return {b: refl[b].where(clear) for b in bands}, clear_pct
+    return {b: refl[b].where(clear) if mask else refl[b] for b in bands}, clear_pct

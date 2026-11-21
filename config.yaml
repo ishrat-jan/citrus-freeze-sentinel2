@@ -72,6 +72,9 @@ plots:
   map_percentiles: [2, 98]    # colour range of index maps (from baseline, vegetated pixels)
   change_percentile: 98       # symmetric colour range of change maps
   zoom_km: 3                  # close-up around the largest kill zone
+  zoom_citrus_km: 5           # window around the densest citrus (citrus maps)
+  rgb_date: "2026-02-06"      # true-colour background (mostly cloud-free)
+  rgb_stretch: [2, 98]        # contrast stretch percentiles
   colors:
     surface: "#fcfcfb"
     land: "#e3e2de"           # non-citrus land on damage maps
@@ -83,4 +86,6 @@ plots:
     citrus_ok: "#9fbf8f"
     damage: ["#ef8a62", "#cc4c3b", "#8b1a1a"]   # mild, moderate, severe
     kill_zone: "#1c5cab"
+    citrus_outline: "#000000"
+    zoom_box: "#eda100"
   index_cmaps: {NDVI: "YlGn", EVI: "YlGn", NDRE: "YlGn", NDWI: "GnBu", MCARI: "YlGn"}
