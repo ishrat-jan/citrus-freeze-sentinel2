@@ -346,3 +346,35 @@ def frost_map(frost, citrus, win, cfg, folder):
     return _two_panels(frost.copy(data=codes), [c["land"], *c["frost"]], labels,
                        "Frost-prone areas: ground lower than its surroundings - all land (citrus outlined)",
                        "frost_prone", win, cfg, folder, outline=citrus)
+
+
+
+# ---------- is it seasonal? ----------
+def seasonal_chart(seasonal, cfg, folder):
+    """Median citrus NDVI change vs baseline, prior year vs 2026, with % damaged as labels."""
+    c, y = cfg["plots"]["colors"], cfg["prior_year"]["label"]
+    fig, ax = plt.subplots(figsize=(7, 4.2), facecolor=c["surface"])
+    _style(ax, cfg, "")
+    x = np.arange(len(seasonal))
+    w = 0.36
+    series = ((y, c["prior_year"], -w / 2), ("2026", c["citrus"], w / 2))
+    for label, col, dx in series:
+        vals = seasonal[f"median_change_{label}"].values
+        pct = seasonal[f"damaged_pct_{label}"].values
+        ax.bar(x + dx, vals, width=w - 0.04, color=col, label=label, zorder=2)
+        for xi, v, p in zip(x + dx, vals, pct):
+            ax.annotate(f"{p:.1f}%\ndamaged", (xi, v), xytext=(0, 4 if v >= 0 else -4),
+                        textcoords="offset points", ha="center", va="bottom" if v >= 0 else "top",
+                        fontsize=8, color=c["text"])
+    ax.axhline(0, color=c["text"], lw=0.8, zorder=3)
+    ax.set_xticks(x, [pd.Timestamp(f"2026-{d}").strftime("%d %b") for d in seasonal.date])
+    ax.set_ylabel("median NDVI change vs baseline", fontsize=9, color=c["muted"])
+    lo = min(seasonal.filter(like="median_change").min().min(), 0)
+    hi = max(seasonal.filter(like="median_change").max().max(), 0)
+    ax.set_ylim(lo - 0.035, hi + 0.035)                         # room for the labels
+    ax.grid(axis="y", color=c["freeze"], lw=0.5, zorder=0)
+    ax.legend(frameon=False, fontsize=9, loc="lower left")
+    fig.suptitle(f"Is it seasonal? Citrus NDVI change, {y} vs 2026 - citrus only", x=0.01, ha="left",
+                 fontsize=12, color=c["text"])
+    fig.tight_layout()
+    return _save(fig, folder, "seasonal_check_citrus", cfg)

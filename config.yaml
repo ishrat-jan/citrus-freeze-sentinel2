@@ -113,6 +113,7 @@ plots:
     recovery: ["#1c5cab", "#6da7ec", "#e34948", "#eda100"]   # recovered, partly, same or worse, new damage
     frost: ["#86b6ef", "#1c5cab"]                             # hollow, deep hollow
     note: "#8a8984"
+    prior_year: "#a3a29d"        # grey bars (2025) in the seasonal chart
     citrus_outline: "#000000"
     zoom_box: "#52514e"          # dashed box marking the main citrus area
   index_cmaps: {NDVI: "YlGn", EVI: "YlGn", NDRE: "YlGn", NDWI: "GnBu", MCARI: "YlGn"}

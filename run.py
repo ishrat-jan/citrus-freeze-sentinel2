@@ -206,6 +206,7 @@ def main(config="config.yaml", test=False):
                      "median_change_2026": m26, "damaged_pct_2026": p26})
     seasonal = pd.DataFrame(rows)
     seasonal.to_csv(r["out"] / "tables" / "seasonal_check_citrus.csv", index=False)
+    plots.seasonal_chart(seasonal, cfg, r["figures"])
     del base_p, veg_p
     print(seasonal.to_string(index=False))
 

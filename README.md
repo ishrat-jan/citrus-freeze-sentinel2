@@ -130,6 +130,11 @@ and 27 Jan 2025; same area, masks, thresholds and citrus mask):
 | 6 Feb | -0.030 | 10.1% | -0.046 | 12.8% |
 | 21 Feb | +0.023 | 1.8% | **-0.090** | **43.0%** |
 
+![Citrus NDVI change vs baseline, 2025 vs 2026, citrus only](figures/seasonal_check_citrus.png)
+
+*Citrus only: median NDVI change vs the January baseline in 2025 (grey) and 2026 (orange)
+on 6 and 21 Feb; labels give the share of citrus that would count as damaged.*
+
 In 2025 citrus NDVI *rose* slightly by 21 February; in 2026 it fell sharply. The
 21 Feb loss is not normal seasonal change. On 6 Feb the two years are closer, so
 part of the early signal may be seasonal (late January 2025 also had a cold spell).
@@ -200,6 +205,7 @@ Other vegetation also lost greenness after the freeze.*
 | `citrus_location.png` | citrus only: CDL outlines on true colour |
 | `damage_citrus_main_area.png`, `damage_ndvi_killzones.png` | citrus only: NDVI damage classes, kill zones |
 | `recovery_citrus.png` | citrus only: recovery classes |
+| `seasonal_check_citrus.png` | citrus only: NDVI change, 2025 vs 2026 |
 | `frost_prone.png` | all land: frost-prone classes, citrus outlined |
 | `timeseries_indices.png` | citrus vs all other vegetation: change of each index |
 | `map_<index>.png` | all vegetation: each index on the baseline, 6 Feb and 21 Feb |
