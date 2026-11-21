@@ -41,7 +41,12 @@ dates:
 
 timeseries:
   min_clear_pct: 20           # dates with less clear land are skipped (unless baseline/damage dates)
-  min_group_clear_pct: 5      # plot a point only if this % of the group's pixels is clear
+  # The time series uses only pixels that are clear on ALL plotted dates, and plots each
+  # pixel's change vs its own baseline. While less citrus than min_common_ha is clear on
+  # all dates, the cloudiest date is left out (damage dates are always kept).
+  min_common_ha: 20
+  date_notes:                 # marked on the plot if the date is kept
+    "2026-02-01": "1 Feb: during freeze - ice/irrigation water on canopy"
 
 indices: ["NDVI", "EVI", "NDRE", "NDWI", "MCARI"]   # NDVI drives the damage classes
 
@@ -50,6 +55,25 @@ thresholds:
   mild: -0.10                 # NDVI change classes: none >= mild > mild >= moderate ...
   moderate: -0.20
   severe: -0.30
+  recovery_tolerance: 0.05    # 21 Feb vs 6 Feb: NDVI rises smaller than this count as "same"
+
+prior_year:                   # "Is it seasonal?": the same NDVI change one year earlier
+  label: "2025"
+  start_date: "2025-01-01"
+  end_date: "2025-02-28"
+  baseline: ["2025-01-02", "2025-01-12", "2025-01-17", "2025-01-27"]   # 22 Jan 2025 was fully cloudy
+  damage_early: "2025-02-06"
+  damage_late: "2025-02-21"
+
+terrain:                      # frost-prone (low-lying) areas
+  dem_collection: "cop-dem-glo-30"   # Copernicus DEM 30 m, from the same STAC catalogue
+  lowlying_radius_m: 300      # low-lying index = elevation - mean elevation within this distance
+  hollow_m: 0.0               # hollow:      deep_hollow_m <= index < hollow_m
+  deep_hollow_m: -4.0         # deep hollow: index < deep_hollow_m
+  lowlying_bins: [-4, -2, 0, 2]
+  damage_date: "2026-02-06"   # date whose citrus damage is related to terrain (closest to the freeze)
+  water_date: "2026-02-06"    # lakes (SCL class 6 on this date) are left out of the map
+  water_scl_class: 6
 
 kill_zones:
   late_min_class: 2           # moderate or worse on 21 Feb ...
@@ -86,6 +110,9 @@ plots:
     citrus_ok: "#9fbf8f"
     damage: ["#ef8a62", "#cc4c3b", "#8b1a1a"]   # mild, moderate, severe
     kill_zone: "#1c5cab"
+    recovery: ["#1c5cab", "#6da7ec", "#e34948", "#eda100"]   # recovered, partly, same or worse, new damage
+    frost: ["#86b6ef", "#1c5cab"]                             # hollow, deep hollow
+    note: "#8a8984"
     citrus_outline: "#000000"
-    zoom_box: "#eda100"
+    zoom_box: "#52514e"          # dashed box marking the main citrus area
   index_cmaps: {NDVI: "YlGn", EVI: "YlGn", NDRE: "YlGn", NDWI: "GnBu", MCARI: "YlGn"}

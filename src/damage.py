@@ -29,6 +29,8 @@ from shapely.geometry import shape
 
 NODATA = 255
 CLASS_NAMES = {0: "none", 1: "mild", 2: "moderate", 3: "severe"}
+RECOVERY_NAMES = {0: "undamaged", 1: "recovered", 2: "partly recovered", 3: "same or worse",
+                  4: "new damage"}
 
 
 # ---------- baseline, change, damage classes ----------
@@ -46,6 +48,55 @@ def classify(change, veg, cfg):
                         [3, 2, 1, 0], default=NODATA).astype("uint8")   # NaN -> no data
     classes[~veg.values] = NODATA
     return xr.DataArray(classes, coords=change.coords, dims=change.dims, name="damage_class")
+
+
+def recovery(change_early, change_late, dmg_early, dmg_late, cfg):
+    """21 Feb vs 6 Feb for each pixel (uint8):
+        0 undamaged        not damaged on either date
+        1 recovered        damaged on 6 Feb, not on 21 Feb
+        2 partly recovered damaged on both dates, NDVI rose by more than the tolerance
+        3 same or worse    damaged on both dates, NDVI did not rise by more than the tolerance
+        4 new damage       not damaged on 6 Feb, damaged on 21 Feb
+    """
+    tol = cfg["thresholds"]["recovery_tolerance"]
+    e, l = dmg_early.values, dmg_late.values
+    rise = (change_late - change_early).values          # = NDVI(21 Feb) - NDVI(6 Feb)
+    valid = (e != NODATA) & (l != NODATA)
+    hit_e, hit_l = e >= 1, l >= 1
+    out = np.full(e.shape, NODATA, dtype="uint8")
+    out[valid & ~hit_e & ~hit_l] = 0
+    out[valid & hit_e & ~hit_l] = 1
+    out[valid & hit_e & hit_l & (rise > tol)] = 2
+    out[valid & hit_e & hit_l & (rise <= tol)] = 3
+    out[valid & ~hit_e & hit_l] = 4
+    return xr.DataArray(out, coords=dmg_early.coords, dims=dmg_early.dims, name="recovery_class")
+
+
+def class_table(classes, mask, names, cfg):
+    """Area (ha) and % of each class inside `mask` (no-data pixels left out)."""
+    v = classes.values[mask.values]
+    v = v[v != NODATA]
+    ha = cfg["run"]["pixel_ha"]
+    return pd.DataFrame([{"class": n, "area_ha": round((v == k).sum() * ha, 1),
+                          "pct": round(100 * (v == k).mean(), 1) if len(v) else np.nan}
+                         for k, n in names.items()])
+
+
+def noise_check(ndvi_a, ndvi_b, veg, cfg):
+    """NDVI difference between two pre-freeze dates on vegetated pixels: normal date-to-date change."""
+    v = (ndvi_b - ndvi_a).values[veg.values]
+    v = v[np.isfinite(v)].astype("float64")
+    a, b = cfg["dates"]["noise_pair"]
+    return pd.DataFrame([{"pair": f"{b} minus {a}", "n_pixels": len(v), "mean": round(v.mean(), 4),
+                          "std": round(v.std(), 4), "p01": round(np.percentile(v, 1), 4),
+                          "p99": round(np.percentile(v, 99), 4),
+                          "pct_below_mild": round(100 * (v < cfg["thresholds"]["mild"]).mean(), 2)}])
+
+
+def citrus_change_stats(change, dmg, citrus, veg):
+    """Median NDVI change and % damaged (mild or worse) for vegetated citrus."""
+    m = citrus.values & veg.values & np.isfinite(change.values)
+    return round(float(np.median(change.values[m])), 3), round(100 * float((dmg.values[m] >= 1).mean()), 1)
 
 
 # ---------- citrus mask (USDA Cropland Data Layer via CropScape) ----------

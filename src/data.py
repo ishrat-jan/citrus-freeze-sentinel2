@@ -19,15 +19,20 @@ from odc.stac import configure_rio, load as stac_load
 from pystac_client import Client
 
 
-def search(cfg):
-    """All Sentinel-2 L2A scenes of the tile that cover the AOI in the date window."""
+def search(cfg, start=None, end=None, dates=None):
+    """Sentinel-2 L2A scenes of the tile covering the AOI (default: the main date window).
+
+    dates: optional list of 'YYYY-MM-DD' to keep (e.g. the prior-year dates).
+    """
     s2 = cfg["sentinel2"]
     items = list(Client.open(s2["stac_url"]).search(
         collections=[s2["collection"]],
         bbox=cfg["aoi"]["bbox"],
-        datetime=f"{s2['start_date']}/{s2['end_date']}",
+        datetime=f"{start or s2['start_date']}/{end or s2['end_date']}",
         query={"grid:code": {"eq": s2["mgrs_tile"]}},
     ).items())
+    if dates is not None:
+        items = [it for it in items if day(it) in set(dates)]
     if not items:
         raise RuntimeError("No Sentinel-2 scenes found - check config.yaml")
     return items

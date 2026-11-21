@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from src import damage, data, indices, plots
+from src import damage, data, indices, plots, terrain
 
 
 def load_config(path, test):
@@ -85,10 +85,14 @@ def main(config="config.yaml", test=False):
     groups = {"citrus": (citrus & veg).values, "other vegetation": (~citrus & veg).values}
 
     step("4. Each index: baseline, change on the damage dates, maps")
-    stats, ndvi_change = [], {}
+    stats, ndvi_change, baselines = [], {}, {}
     for name in names:
         base = base_ndvi if name == "NDVI" else damage.baseline([index_on(x, name) for x in d["baseline"]])[0]
+        baselines[name] = base
         a, b = (index_on(x, name) for x in d["noise_pair"])
+        if name == "NDVI":                     # noise check behind the -0.10 threshold
+            noise_tab = damage.noise_check(a, b, veg, cfg)
+            noise_tab.to_csv(r["out"] / "tables" / "noise_check.csv", index=False)
         noise = (b - a).values[veg.values]
         noise = noise[np.isfinite(noise)].astype("float64")
         row = {"index": name,
@@ -115,23 +119,49 @@ def main(config="config.yaml", test=False):
               f"{row[f'median_change_{late}']:+.3f} ({late})")
     comparison = damage.index_change_table(stats, cfg)
     comparison.to_csv(r["out"] / "tables" / "index_change_citrus.csv", index=False)
+    print(noise_tab.to_string(index=False))
 
-    step("5. Time series of all indices (citrus vs other vegetation)")
+    step("5. Time series: change vs own baseline, pixels clear on every plotted date")
+    clear_px = {x: np.isfinite(data.load_date(cfg, x, ["red"])[0]["red"].values) for x in index_dates}
+
+    def common(days):
+        m = veg.values.copy()
+        for x in days:
+            m &= clear_px[x]
+        return m
+
+    # Leave out the cloudiest dates (least clear citrus) one by one until enough citrus is
+    # clear on every remaining date. The damage dates are always kept.
+    plot_dates = list(index_dates)
+    m = common(plot_dates)
+    while (m & citrus.values).sum() * r["pixel_ha"] < tp["min_common_ha"]:
+        candidates = [x for x in plot_dates if x not in (early, late)]
+        if len(candidates) <= 1:
+            break
+        worst = min(candidates, key=lambda x: (clear_px[x] & groups["citrus"]).sum())
+        print(f"  {(m & citrus.values).sum() * r['pixel_ha']:.1f} ha of citrus clear on all dates -> "
+              f"leaving out {worst} (cloudiest)")
+        plot_dates.remove(worst)
+        m = common(plot_dates)
+    ts_masks = {"citrus": m & citrus.values, "other vegetation": m & ~citrus.values}
+    counts = {g: int(v.sum()) for g, v in ts_masks.items()}
+    del clear_px
+    print(f"  dates: {', '.join(plot_dates)}; pixels: {counts}")
     rows = []
-    for date in index_dates:
+    for date in plot_dates:
         refl, _ = data.load_date(cfg, date, indices.bands_for(names))
         for name in names:
-            v = indices.compute(name, refl).values
-            for group, m in groups.items():
-                ok = m & np.isfinite(v)
-                pct = 100 * ok.sum() / max(m.sum(), 1)
-                if pct >= tp["min_group_clear_pct"]:
-                    rows.append({"date": date, "index": name, "group": group,
-                                 "median": round(float(np.median(v[ok])), 4), "clear_pct": round(pct, 1)})
+            ch = (indices.compute(name, refl) - baselines[name]).values
+            for group, gm in ts_masks.items():
+                v = ch[gm]
+                v = v[np.isfinite(v)]
+                rows.append({"date": date, "index": name, "group": group, "n_pixels": len(v),
+                             "median_change": round(float(np.median(v)), 4)})
         del refl
     ts = pd.DataFrame(rows)
-    ts.to_csv(r["out"] / "tables" / "timeseries_indices.csv", index=False)
-    plots.timeseries(ts, cfg, r["figures"])
+    ts.to_csv(r["out"] / "tables" / "timeseries_change.csv", index=False)
+    plots.timeseries(ts, counts, cfg, r["figures"])
+    del baselines
 
     step("6. NDVI damage classes and kill zones")
     damages = {x: damage.classify(ndvi_change[x], veg, cfg) for x in (early, late)}
@@ -152,7 +182,47 @@ def main(config="config.yaml", test=False):
     plots.damage_citrus_zoom(damages, citrus, land, kz, win, cfg, r["figures"])
     del rgb
 
-    step("8. GeoTIFFs")
+    step("8. Recovery: 21 Feb vs 6 Feb")
+    rec = damage.recovery(ndvi_change[early], ndvi_change[late], damages[early], damages[late], cfg)
+    rec_tab = damage.class_table(rec, citrus, damage.RECOVERY_NAMES, cfg)
+    rec_tab.to_csv(r["out"] / "tables" / "recovery_citrus.csv", index=False)
+    plots.recovery_map(rec, citrus, land, win, cfg, r["figures"])
+    print(rec_tab.to_string(index=False))
+
+    step("9. Is it seasonal? The same NDVI change one year earlier")
+    py = cfg["prior_year"]
+    p_dates = py["baseline"] + [py["damage_early"], py["damage_late"]]
+    p_items = data.search(cfg, py["start_date"], py["end_date"], dates=p_dates)
+    for x in p_dates:
+        data.download(cfg, p_items, x, cfg["sentinel2"]["base_bands"])
+    base_p, _ = damage.baseline([index_on(x, "NDVI") for x in py["baseline"]])
+    veg_p = base_p >= cfg["thresholds"]["vegetation_ndvi"]
+    rows = []
+    for d26, d25 in ((early, py["damage_early"]), (late, py["damage_late"])):
+        ch25 = (index_on(d25, "NDVI") - base_p).where(veg_p)
+        m25, p25 = damage.citrus_change_stats(ch25, damage.classify(ch25, veg_p, cfg), citrus, veg_p)
+        m26, p26 = damage.citrus_change_stats(ndvi_change[d26], damages[d26], citrus, veg)
+        rows.append({"date": d26[5:], f"median_change_{py['label']}": m25, f"damaged_pct_{py['label']}": p25,
+                     "median_change_2026": m26, "damaged_pct_2026": p26})
+    seasonal = pd.DataFrame(rows)
+    seasonal.to_csv(r["out"] / "tables" / "seasonal_check_citrus.csv", index=False)
+    del base_p, veg_p
+    print(seasonal.to_string(index=False))
+
+    step("10. Frost-prone areas (low-lying index from the Copernicus DEM)")
+    t = cfg["terrain"]
+    dem = terrain.load_dem(base_ndvi, cfg)
+    low = terrain.lowlying_index(dem, cfg)
+    water = data.read_band(cfg, t["water_date"], "scl") == t["water_scl_class"]
+    frost = terrain.frost_classes(low, water, cfg)
+    by_class, by_bin = terrain.damage_rates(frost, low, damages[t["damage_date"]], citrus, cfg)
+    by_class.to_csv(r["out"] / "tables" / "damage_by_frost_class.csv", index=False)
+    by_bin.to_csv(r["out"] / "tables" / "damage_by_lowlying.csv", index=False)
+    plots.frost_map(frost, citrus, win, cfg, r["figures"])
+    print(by_class.to_string(index=False))
+    print(by_bin.to_string(index=False))
+
+    step("11. GeoTIFFs")
     save_tif(base_ndvi, r["out"] / "rasters" / "ndvi_baseline.tif")
     save_tif(base_count, r["out"] / "rasters" / "baseline_clear_dates.tif")
     for x in (early, late):
@@ -160,6 +230,9 @@ def main(config="config.yaml", test=False):
         save_tif(damages[x], r["out"] / "rasters" / f"damage_class_{x}.tif", nodata=damage.NODATA)
     save_tif(ids, r["out"] / "rasters" / "kill_zone_id.tif", nodata=0)
     save_tif(citrus.astype("uint8"), r["out"] / "rasters" / "citrus_mask.tif")
+    save_tif(rec, r["out"] / "rasters" / "recovery_class.tif", nodata=damage.NODATA)
+    save_tif(low, r["out"] / "rasters" / "lowlying_index.tif")
+    save_tif(frost, r["out"] / "rasters" / "frost_prone_class.tif", nodata=damage.NODATA)
 
     print(f"\nDone. Tables and rasters in {r['out']}, figures in {r['figures']}")
 

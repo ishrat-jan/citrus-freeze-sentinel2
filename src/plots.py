@@ -60,8 +60,11 @@ def _map_row(n, cfg):
 
 
 # ---------- time series ----------
-def timeseries(ts, cfg, folder):
-    """Median of each index over clear pixels: citrus vs other vegetation, freeze shaded."""
+def timeseries(ts, counts, cfg, folder):
+    """Median change vs each pixel's own baseline, on pixels clear on every plotted date.
+
+    ts: rows (date, index, group, median_change); counts: {group: n_pixels}.
+    """
     c, d = cfg["plots"]["colors"], cfg["dates"]
     names = cfg["indices"]
     ncol = 2
@@ -69,29 +72,38 @@ def timeseries(ts, cfg, folder):
     fig, axes = plt.subplots(nrow, ncol, figsize=(10, 3 * nrow), sharex=True, facecolor=c["surface"])
     axes = axes.ravel()
     f0, f1 = pd.to_datetime(d["freeze_period"])
+    notes = {k: v for k, v in cfg["timeseries"]["date_notes"].items() if k in set(ts.date)}
     for ax, name in zip(axes, names):
         _style(ax, cfg, name)
         ax.axvspan(f0, f1 + pd.Timedelta(days=1), color=c["freeze"], lw=0, zorder=0)
+        ax.axhline(0, color=c["muted"], lw=0.8, zorder=1)
         for day in (d["damage_early"], d["damage_late"]):
             ax.axvline(pd.Timestamp(day), color=c["muted"], lw=0.8, ls=":", zorder=1)
+        for day in notes:
+            ax.axvline(pd.Timestamp(day), color=c["note"], lw=1, ls="--", zorder=1)
         for group, col in (("citrus", c["citrus"]), ("other vegetation", c["other_veg"])):
             g = ts[(ts["index"] == name) & (ts.group == group)]
-            ax.plot(pd.to_datetime(g.date), g["median"], color=col, lw=2, marker="o", ms=5, zorder=3)
+            ax.plot(pd.to_datetime(g.date), g["median_change"], color=col, lw=2, marker="o", ms=5, zorder=3)
+        ax.set_ylabel("change vs baseline", fontsize=8, color=c["muted"])
         ax.grid(axis="y", color=c["freeze"], lw=0.5)
+        ax.xaxis.set_major_locator(mdates.DayLocator(bymonthday=[1, 8, 15, 22]))
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%d %b"))
         ax.tick_params(labelbottom=True)          # dates under every panel
-    # last cell: legend and notes
     leg = axes[len(names)]
     leg.axis("off")
-    handles = [Line2D([], [], color=c["citrus"], lw=2, marker="o", label="citrus"),
-               Line2D([], [], color=c["other_veg"], lw=2, marker="o", label="other vegetation"),
+    ha = cfg["run"]["pixel_ha"]
+    handles = [Line2D([], [], color=c["citrus"], lw=2, marker="o",
+                      label=f"citrus ({counts['citrus']:,} pixels, {counts['citrus'] * ha:.0f} ha)"),
+               Line2D([], [], color=c["other_veg"], lw=2, marker="o",
+                      label=f"other vegetation ({counts['other vegetation']:,} pixels)"),
                Patch(color=c["freeze"], label="main freeze (26 Jan - 2 Feb)"),
                Line2D([], [], color=c["muted"], lw=0.8, ls=":", label="damage dates (6 and 21 Feb)")]
+    handles += [Line2D([], [], color=c["note"], lw=1, ls="--", label=text) for text in notes.values()]
     leg.legend(handles=handles, loc="center left", frameon=False, fontsize=9)
     for ax in axes[len(names) + 1:]:
         ax.axis("off")
-    fig.suptitle("Median index value per clear date - citrus vs all other vegetation", x=0.01, ha="left",
-                 fontsize=12, color=c["text"])
+    fig.suptitle("Median change vs each pixel's own baseline - citrus vs all other vegetation\n"
+                 "(only pixels clear on every plotted date)", x=0.01, ha="left", fontsize=12, color=c["text"])
     fig.tight_layout()
     return _save(fig, folder, "timeseries_indices", cfg)
 
@@ -222,7 +234,7 @@ def citrus_location(rgb_bands, citrus, win, cfg, folder):
     axes[0].imshow(_rgb(small, cfg), extent=ext, interpolation="nearest")
     _outlines(citrus, cfg).boundary.plot(ax=axes[0], color=c["citrus_outline"], lw=0.4)
     x0, x1, y0, y1 = (win["x"].start / 1e3, win["x"].stop / 1e3, win["y"].stop / 1e3, win["y"].start / 1e3)
-    axes[0].plot([x0, x1, x1, x0, x0], [y0, y0, y1, y1, y0], color=c["zoom_box"], lw=1.5)
+    axes[0].plot([x0, x1, x1, x0, x0], [y0, y0, y1, y1, y0], color=c["zoom_box"], lw=1.5, ls="--")
     axes[0].set_xlim(ext[0], ext[1])
     axes[0].set_ylim(ext[2], ext[3])
     # main citrus area (full resolution)
@@ -238,7 +250,7 @@ def citrus_location(rgb_bands, citrus, win, cfg, folder):
         ax.set_xlabel("Easting (km, UTM 17N)", fontsize=8, color=c["muted"])
         ax.set_ylabel("Northing (km)", fontsize=8, color=c["muted"])
     handles = [Patch(facecolor="none", edgecolor=c["citrus_outline"], lw=1.2, label="citrus (USDA CDL 2025)"),
-               Patch(facecolor="none", edgecolor=c["zoom_box"], lw=1.5, label="main citrus area")]
+               Patch(facecolor="none", edgecolor=c["zoom_box"], lw=1.5, ls="--", label="main citrus area")]
     fig.legend(handles=handles, loc="lower center", ncol=2, frameon=False, fontsize=9)
     fig.suptitle(f"Where the citrus is - true colour, {cfg['plots']['rgb_date']}", x=0.01, ha="left",
                  fontsize=12, color=c["text"])
@@ -274,3 +286,63 @@ def damage_citrus_zoom(damages, citrus, land, kz, win, cfg, folder):
                  fontsize=12, color=c["text"])
     fig.subplots_adjust(bottom=0.12, wspace=0.08)
     return _save(fig, folder, "damage_citrus_main_area", cfg)
+
+
+
+# ---------- recovery and frost-prone maps (whole area + main citrus area) ----------
+def _two_panels(codes, colors, labels, title, name, win, cfg, folder, outline=None):
+    """Class map: whole area (downsampled) and the main citrus area (full resolution).
+
+    codes: DataArray of 0..len(colors) (0 = background shown white); outline: optional mask outlined in black.
+    """
+    c = cfg["plots"]["colors"]
+    cmap = ListedColormap([c["surface"], *colors])
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6.6), facecolor=c["surface"],
+                             gridspec_kw={"width_ratios": [1, 1.25]})
+    for ax, da, sub in ((axes[0], codes, "Whole study area"), (axes[1], codes.sel(**win), "Main citrus area")):
+        arr, ext = thumb(da, cfg)
+        _style(ax, cfg, sub)
+        ax.imshow(arr, extent=ext, cmap=cmap, vmin=-0.5, vmax=len(colors) + 0.5, interpolation="nearest")
+        if outline is not None:
+            o = outline if da is codes else outline.sel(**win)
+            _outlines(o, cfg).boundary.plot(ax=ax, color=c["citrus_outline"], lw=0.3 if da is codes else 0.7)
+        ax.set_xlim(ext[0], ext[1])
+        ax.set_ylim(ext[2], ext[3])
+        ax.set_xlabel("Easting (km, UTM 17N)", fontsize=8, color=c["muted"])
+        ax.set_ylabel("Northing (km)", fontsize=8, color=c["muted"])
+    x0, x1, y0, y1 = win["x"].start / 1e3, win["x"].stop / 1e3, win["y"].stop / 1e3, win["y"].start / 1e3
+    axes[0].plot([x0, x1, x1, x0, x0], [y0, y0, y1, y1, y0], color=c["zoom_box"], lw=1.5, ls="--")
+    handles = [Patch(color=col, label=lab) for col, lab in zip(colors, labels)]
+    if outline is not None:
+        handles.append(Patch(facecolor="none", edgecolor=c["citrus_outline"], lw=1.2, label="citrus (CDL)"))
+    fig.legend(handles=handles, loc="lower center", ncol=len(handles), frameon=False, fontsize=9)
+    fig.suptitle(title, x=0.01, ha="left", fontsize=12, color=c["text"])
+    fig.subplots_adjust(bottom=0.1, wspace=0.18)
+    return _save(fig, folder, name, cfg)
+
+
+def recovery_map(rec, citrus, land, win, cfg, folder):
+    """Citrus-only recovery classes (21 Feb vs 6 Feb)."""
+    c = cfg["plots"]["colors"]
+    r = rec.values
+    codes = np.where(land.values, 1, 0)
+    cit = citrus.values & (r != NODATA)
+    codes = np.where(cit & (r == 0), 2, codes)
+    for k in (1, 2, 3, 4):
+        codes = np.where(cit & (r == k), 2 + k, codes)
+    labels = ["not citrus / not assessed", "undamaged", "recovered", "partly recovered", "same or worse",
+              "new damage"]
+    return _two_panels(rec.copy(data=codes), [c["land"], c["citrus_ok"], *c["recovery"]], labels,
+                       "Recovery, 21 Feb vs 6 Feb - citrus only", "recovery_citrus", win, cfg, folder)
+
+
+def frost_map(frost, citrus, win, cfg, folder):
+    """Frost-prone (low-lying) classes on all land, with citrus outlined."""
+    c, t = cfg["plots"]["colors"], cfg["terrain"]
+    f = frost.values
+    codes = np.where(f == NODATA, 0, f + 1)            # 0 lake/no data, 1 not low-lying, 2 hollow, 3 deep
+    labels = ["not low-lying", f"hollow ({t['deep_hollow_m']:g} to {t['hollow_m']:g} m)",
+              f"deep hollow (< {t['deep_hollow_m']:g} m)"]
+    return _two_panels(frost.copy(data=codes), [c["land"], *c["frost"]], labels,
+                       "Frost-prone areas: ground lower than its surroundings - all land (citrus outlined)",
+                       "frost_prone", win, cfg, folder, outline=citrus)
