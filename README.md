@@ -9,6 +9,13 @@ January baseline. **NDVI change is the damage measure**; four other indices
 One command runs everything: search, download, cloud masking, indices, damage
 classes, kill zones, recovery, frost-prone areas, tables and figures.
 
+## Key findings
+
+- **Damaged citrus rose from 12.8% (6 Feb) to 43.0% (21 Feb)**, about nine-tenths of it mild, as freeze-injured leaves dried out and dropped.
+- **6 kill zones (6.1 ha)**, all in one grove area south-west of Clermont (around 28.43 N, 81.86 W).
+- **Not seasonal:** in 2025 citrus NDVI *rose* slightly by 21 Feb (+0.023); in 2026 it fell by 0.090.
+- **Frost pockets:** citrus in ground lower than its surroundings was damaged about twice as often (16.8% vs 7.6% on 6 Feb).
+
 ## Objectives
 
 | Objective | Question | Output |
@@ -249,8 +256,29 @@ and CSV tables in `outputs/10m/`.
 - **Citrus mask.** The CDL is a modelled map: some groves are missed or mislabelled,
   and 68 ha of mapped citrus has a baseline NDVI below 0.3 (young, reset or
   abandoned groves) and is not assessed.
+- **One main grove block.** Most citrus is in a single grove block, so the hollow vs
+  elsewhere comparison is largely a comparison within one area. It is supporting
+  evidence that low ground was hit harder, not proof.
 - **Frost-prone map.** The 30 m DEM has about 2 m vertical accuracy and does not resolve
   small hollows; lakes moderate local temperatures, which the index does not model. The
   map relates past damage to terrain; it is a planning guide, not a temperature model.
 - **BOA offset.** Earth Search's offset flag is not always correct, so the
   reflectance offset is decided from the data for each scene.
+
+## Future improvements
+
+- **Sentinel-1 SAR** to build a cloud-free baseline (radar sees through cloud and cirrus).
+- **A spring image** (new flush) to separate dead trees from defoliated trees that regrow.
+- **Field or insurance-claims data** to validate the damage classes and to train a supervised
+  (machine-learning) classifier.
+- **More prior years** for the seasonal check, instead of 2025 only.
+- **Soil-adjusted indices** such as OSAVI or the MCARI/OSAVI ratio, which reduce the soil
+  background that masks MCARI in open groves.
+
+## References
+
+- WGCU (6 February 2026). *Florida's citrus industry takes another hit after rare multi-day freeze.*
+  https://www.wgcu.org/2026-02-06/floridas-citrus-industry-takes-another-hit-after-rare-multi-day-freeze
+- Florida Department of Agriculture and Consumer Services (FDACS) (February 2026). *2026 Freeze Report*
+  (preliminary estimates of freeze damage to Florida agriculture).
+  https://content.govdelivery.com/attachments/FLDAC/2026/02/20/file_attachments/3560341/FINAL%20-%202026%20Freeze%20Report.pdf
